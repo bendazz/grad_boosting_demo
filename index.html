@@ -12,348 +12,42 @@
 <body>
     <h1>Gradient Boosting Demo: Noisy Parabola</h1>
     <div style="display: flex; flex-direction: row; align-items: flex-start; gap: 40px;">
-        <div>
-            <canvas id="plot" width="700" height="480"></canvas>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <canvas id="plot" width="700" height="360"></canvas>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <canvas id="sumplot1" width="700" height="320"></canvas>
+                <div style="text-align:center; color:#555; font: 14px Arial;">Approximation: mean + tree1</div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <canvas id="sumplot2" width="700" height="320"></canvas>
+                <div style="text-align:center; color:#555; font: 14px Arial;">Approximation: mean + tree1 + tree2</div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <canvas id="sumplot3" width="700" height="320"></canvas>
+                <div style="text-align:center; color:#555; font: 14px Arial;">Approximation: mean + tree1 + tree2 + tree3</div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <canvas id="sumplot4" width="700" height="320"></canvas>
+                <div style="text-align:center; color:#555; font: 14px Arial;">Approximation: mean + tree1 + tree2 + tree3 + tree4</div>
+            </div>
         </div>
-        <div>
-            <canvas id="residuals" width="700" height="480"></canvas>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <canvas id="residuals1" width="700" height="360"></canvas>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <canvas id="residuals2" width="700" height="360"></canvas>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <canvas id="residuals3" width="700" height="360"></canvas>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <canvas id="residuals4" width="700" height="360"></canvas>
+            </div>
         </div>
     </div>
-    <script>
-// Generate 10 points from a noisy parabola: y = x^2 + noise
-function generateData(n = 10) {
-    const data = [];
-    for (let i = 0; i < n; i++) {
-        const x = -2 + 4 * (i / (n - 1)); // Spread x from -2 to 2
-        const noise = (Math.random() - 0.5) * 1.5; // Noise in [-0.75, 0.75]
-        const y = x * x + noise;
-        data.push({ x, y });
-    }
-    return data;
-}
-
-// Simple 2-level regression tree for 1D feature
-function fitTwoLevelTree(data) {
-    const sorted = [...data].sort((a, b) => a.x - b.x);
-    let bestMSE = Infinity;
-    let bestPreds = null;
-    for (let i = 1; i < sorted.length; i++) {
-        const left = sorted.slice(0, i);
-        const right = sorted.slice(i);
-        const leftMean = left.reduce((s, p) => s + p.y, 0) / left.length;
-        const rightMean = right.reduce((s, p) => s + p.y, 0) / right.length;
-        for (let j = 1; j < left.length; j++) {
-            const l1 = left.slice(0, j);
-            const l2 = left.slice(j);
-            const l1Mean = l1.reduce((s, p) => s + p.y, 0) / l1.length;
-            const l2Mean = l2.reduce((s, p) => s + p.y, 0) / l2.length;
-            const preds = [];
-            for (let k = 0; k < sorted.length; k++) {
-                if (k < j) preds.push(l1Mean);
-                else if (k < i) preds.push(l2Mean);
-                else preds.push(rightMean);
-            }
-            const mse = sorted.reduce((s, p, idx) => s + (p.y - preds[idx]) ** 2, 0) / sorted.length;
-            if (mse < bestMSE) {
-                bestMSE = mse;
-                bestPreds = preds.slice();
-            }
-        }
-        for (let j = 1; j < right.length; j++) {
-            const r1 = right.slice(0, j);
-            const r2 = right.slice(j);
-            const r1Mean = r1.reduce((s, p) => s + p.y, 0) / r1.length;
-            const r2Mean = r2.reduce((s, p) => s + p.y, 0) / r2.length;
-            const preds = [];
-            for (let k = 0; k < sorted.length; k++) {
-                if (k < i) preds.push(leftMean);
-                else if (k < i + j) preds.push(r1Mean);
-                else preds.push(r2Mean);
-            }
-            const mse = sorted.reduce((s, p, idx) => s + (p.y - preds[idx]) ** 2, 0) / sorted.length;
-            if (mse < bestMSE) {
-                bestMSE = mse;
-                bestPreds = preds.slice();
-            }
-        }
-    }
-    return {xs: sorted.map(p => p.x), preds: bestPreds, sorted};
-}
-
-let selectedIdx = null;
-
-function plotData(canvas, data, meanY) {
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const xs = data.map(p => p.x);
-    const ys = data.map(p => p.y);
-    const minX = Math.min(...xs), maxX = Math.max(...xs);
-    const minY = Math.min(...ys), maxY = Math.max(...ys);
-    const pad = 60;
-    const plotW = canvas.width - 2 * pad;
-    const plotH = canvas.height - 2 * pad;
-
-    // Draw axes
-    ctx.strokeStyle = '#888';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(pad, canvas.height - pad);
-    ctx.lineTo(canvas.width - pad, canvas.height - pad);
-    ctx.moveTo(pad, pad);
-    ctx.lineTo(pad, canvas.height - pad);
-    ctx.stroke();
-
-    // Draw tick marks and labels for x axis
-    ctx.font = '14px Arial';
-    ctx.fillStyle = '#333';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    const xTicks = 5;
-    for (let i = 0; i <= xTicks; i++) {
-        const xVal = minX + (i / xTicks) * (maxX - minX);
-        const px = pad + ((xVal - minX) / (maxX - minX)) * plotW;
-        ctx.beginPath();
-        ctx.moveTo(px, canvas.height - pad);
-        ctx.lineTo(px, canvas.height - pad + 8);
-        ctx.stroke();
-        ctx.fillText(xVal.toFixed(2), px, canvas.height - pad + 10);
-    }
-    ctx.font = '16px Arial';
-    ctx.fillText('x', pad + plotW / 2, canvas.height - pad + 36);
-
-    // Draw tick marks and labels for y axis
-    ctx.font = '14px Arial';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    const yTicks = 5;
-    for (let i = 0; i <= yTicks; i++) {
-        const yVal = minY + (i / yTicks) * (maxY - minY);
-        const py = canvas.height - pad - ((yVal - minY) / (maxY - minY)) * plotH;
-        ctx.beginPath();
-        ctx.moveTo(pad - 8, py);
-        ctx.lineTo(pad, py);
-        ctx.stroke();
-        ctx.fillText(yVal.toFixed(2), pad - 12, py);
-    }
-    ctx.save();
-    ctx.font = '16px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-    ctx.translate(pad - 38, pad + plotH / 2);
-    ctx.rotate(-Math.PI / 2);
-    ctx.fillText('y', 0, 0);
-    ctx.restore();
-
-    // Draw horizontal line for average y
-    const avgY = meanY !== undefined ? meanY : ys.reduce((a, b) => a + b, 0) / ys.length;
-    const avgPy = canvas.height - pad - ((avgY - minY) / (maxY - minY)) * plotH;
-    ctx.save();
-    ctx.strokeStyle = '#FF4136';
-    ctx.setLineDash([6, 6]);
-    ctx.beginPath();
-    ctx.moveTo(pad, avgPy);
-    ctx.lineTo(canvas.width - pad, avgPy);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
-    ctx.font = '14px Arial';
-    ctx.fillStyle = '#FF4136';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'bottom';
-    ctx.fillText('mean(y)', canvas.width - pad + 8, avgPy - 2);
-
-    // Draw points and handle selection
-    for (let i = 0; i < data.length; i++) {
-        const p = data[i];
-        const px = pad + ((p.x - minX) / (maxX - minX)) * plotW;
-        const py = canvas.height - pad - ((p.y - minY) / (maxY - minY)) * plotH;
-        if (selectedIdx === null || selectedIdx === i) {
-            ctx.fillStyle = '#0074D9';
-        } else {
-            ctx.fillStyle = '#bbb';
-        }
-        ctx.beginPath();
-        ctx.arc(px, py, 6, 0, 2 * Math.PI);
-        ctx.fill();
-        if (selectedIdx === i) {
-            ctx.save();
-            ctx.strokeStyle = '#FF851B';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(px, py);
-            ctx.lineTo(px, avgPy);
-            ctx.stroke();
-            ctx.restore();
-            ctx.font = 'bold 16px Arial';
-            ctx.fillStyle = '#FF851B';
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'middle';
-            const res = (p.y - avgY).toFixed(2);
-            ctx.fillText(`residual: ${res}`, px + 10, py + (avgPy - py) / 2);
-            ctx.font = '14px Arial';
-            ctx.fillStyle = '#0074D9';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'bottom';
-            ctx.fillText(`(${p.x.toFixed(2)}, ${p.y.toFixed(2)})`, px, py - 12);
-        }
-    }
-}
-
-function plotResiduals(canvas, data, meanY, selectedIdx = null) {
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const pad = 60;
-    const plotW = canvas.width - 2 * pad;
-    const plotH = canvas.height - 2 * pad;
-    const residuals = data.map(p => p.y - meanY);
-    const xs = data.map(p => p.x);
-    const minX = Math.min(...xs), maxX = Math.max(...xs);
-    const minR = Math.min(...residuals), maxR = Math.max(...residuals);
-
-    // Draw axes
-    ctx.strokeStyle = '#888';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(pad, canvas.height - pad);
-    ctx.lineTo(canvas.width - pad, canvas.height - pad);
-    ctx.moveTo(pad, pad);
-    ctx.lineTo(pad, canvas.height - pad);
-    ctx.stroke();
-
-    // Draw tick marks and labels for x axis
-    ctx.font = '14px Arial';
-    ctx.fillStyle = '#333';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    const xTicks = 5;
-    for (let i = 0; i <= xTicks; i++) {
-        const xVal = minX + (i / xTicks) * (maxX - minX);
-        const px = pad + ((xVal - minX) / (maxX - minX)) * plotW;
-        ctx.beginPath();
-        ctx.moveTo(px, canvas.height - pad);
-        ctx.lineTo(px, canvas.height - pad + 8);
-        ctx.stroke();
-        ctx.fillText(xVal.toFixed(2), px, canvas.height - pad + 10);
-    }
-    ctx.font = '16px Arial';
-    ctx.fillText('x', pad + plotW / 2, canvas.height - pad + 36);
-
-    // Draw tick marks and labels for y axis (residuals)
-    ctx.font = '14px Arial';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    const yTicks = 5;
-    for (let i = 0; i <= yTicks; i++) {
-        const rVal = minR + (i / yTicks) * (maxR - minR);
-        const py = canvas.height - pad - ((rVal - minR) / (maxR - minR)) * plotH;
-        ctx.beginPath();
-        ctx.moveTo(pad - 8, py);
-        ctx.lineTo(pad, py);
-        ctx.stroke();
-        ctx.fillText(rVal.toFixed(2), pad - 12, py);
-    }
-    ctx.save();
-    ctx.font = '16px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-    ctx.translate(pad - 38, pad + plotH / 2);
-    ctx.rotate(-Math.PI / 2);
-    ctx.fillText('residual', 0, 0);
-    ctx.restore();
-
-    // Fit 2-level regression tree and plot step function on green points
-    const tree = fitTwoLevelTree(data);
-    if (tree) {
-        ctx.save();
-        ctx.strokeStyle = '#111';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        for (let i = 0; i < tree.xs.length; i++) {
-            const px = pad + ((tree.xs[i] - minX) / (maxX - minX)) * plotW;
-            const py = canvas.height - pad - ((tree.preds[i] - meanY - minR) / (maxR - minR)) * plotH;
-            if (i === 0) ctx.moveTo(px, py);
-            else ctx.lineTo(px, py);
-            if (i < tree.xs.length - 1) {
-                const nextPx = pad + ((tree.xs[i + 1] - minX) / (maxX - minX)) * plotW;
-                ctx.lineTo(nextPx, py);
-            }
-        }
-        ctx.stroke();
-        ctx.restore();
-    }
-
-    for (let i = 0; i < data.length; i++) {
-        const px = pad + ((xs[i] - minX) / (maxX - minX)) * plotW;
-        const py = canvas.height - pad - ((residuals[i] - minR) / (maxR - minR)) * plotH;
-        if (selectedIdx === null || selectedIdx === i) {
-            ctx.fillStyle = '#2ECC40';
-        } else {
-            ctx.fillStyle = '#bbb';
-        }
-        ctx.beginPath();
-        ctx.arc(px, py, 6, 0, 2 * Math.PI);
-        ctx.fill();
-        if (selectedIdx === i) {
-            ctx.save();
-            ctx.strokeStyle = '#FF851B';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(px, py);
-            ctx.lineTo(pad, py);
-            ctx.stroke();
-            ctx.restore();
-            ctx.font = 'bold 16px Arial';
-            ctx.fillStyle = '#FF851B';
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'bottom';
-            const res = residuals[i].toFixed(2);
-            ctx.fillText(`residual: ${res}`, pad + 10, py - 8);
-            ctx.font = '14px Arial';
-            ctx.fillStyle = '#2ECC40';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'top';
-            ctx.fillText(`(${data[i].x.toFixed(2)}, ${res})`, px, py + 12);
-        }
-    }
-}
-
-window.onload = function() {
-    const canvas = document.getElementById('plot');
-    const resCanvas = document.getElementById('residuals');
-    const data = generateData(10);
-    const meanY = data.reduce((sum, p) => sum + p.y, 0) / data.length;
-    plotData(canvas, data, meanY);
-    plotResiduals(resCanvas, data, meanY, selectedIdx);
-    canvas.addEventListener('click', function(evt) {
-        const rect = canvas.getBoundingClientRect();
-        const x = evt.clientX - rect.left;
-        const y = evt.clientY - rect.top;
-        const xs = data.map(p => p.x);
-        const ys = data.map(p => p.y);
-        const minX = Math.min(...xs), maxX = Math.max(...xs);
-        const minY = Math.min(...ys), maxY = Math.max(...ys);
-        const pad = 60;
-        const plotW = canvas.width - 2 * pad;
-        const plotH = canvas.height - 2 * pad;
-        let found = null;
-        for (let i = 0; i < data.length; i++) {
-            const px = pad + ((data[i].x - minX) / (maxX - minX)) * plotW;
-            const py = canvas.height - pad - ((data[i].y - minY) / (maxY - minY)) * plotH;
-            const dist = Math.sqrt((x - px) ** 2 + (y - py) ** 2);
-            if (dist < 10) {
-                found = i;
-                break;
-            }
-        }
-        if (found !== null) {
-            selectedIdx = found;
-        } else {
-            selectedIdx = null;
-        }
-        plotData(canvas, data, meanY);
-        plotResiduals(resCanvas, data, meanY, selectedIdx);
-    });
-};
-    </script>
+    <script src="main.js?v=3"></script>
 </body>
 </html>
